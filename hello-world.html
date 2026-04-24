@@ -1,15 +1,355 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="author" content="oxxo.studio">
-  <meta name="copyright" content="oxxo.studio">
-  <title>我是示範的網頁</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程甘特圖產生器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        /* Make canvas scale to container while maintaining 16:9 aspect ratio */
+        #ganttCanvas {
+            width: 100%;
+            height: auto;
+            aspect-ratio: 16 / 9;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border-radius: 0.5rem;
+        }
+    </style>
 </head>
-<body>
-  <h1>Hello World!!</h1>
-  <h2>看得到文字嗎？看得到就是成功囉！</h2>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"2d20d146e11941de83f1ff6f162b9884","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">📊 工程甘特圖產生器</h1>
+                <p class="text-slate-500 text-sm mt-1">自定義任務、自動排程，並一鍵匯出 16:9 PNG 高畫質圖檔</p>
+            </div>
+            <button onclick="downloadPNG()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-5 rounded-lg transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                下載 PNG 圖檔
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Control Panel -->
+            <div class="bg-white p-6 rounded-xl shadow-sm lg:col-span-1 h-fit">
+                <h2 class="text-lg font-semibold mb-4 text-slate-700 border-b pb-2">專案設定</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">工程/專案名稱</label>
+                        <input type="text" id="projectName" value="我的工程專案" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" oninput="drawChart()">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">整體起始日期</label>
+                        <input type="date" id="projectStartDate" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="recalculateDates()">
+                    </div>
+                </div>
+
+                <h2 class="text-lg font-semibold mt-8 mb-4 text-slate-700 border-b pb-2">新增任務</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">任務名稱</label>
+                        <input type="text" id="taskName" placeholder="例如：基礎工程" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">任務天數</label>
+                        <input type="number" id="taskDays" value="5" min="1" class="w-full border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button onclick="addTask()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded-md transition-colors">
+                        + 加入任務
+                    </button>
+                </div>
+
+                <div id="taskList" class="mt-6 space-y-2 max-h-60 overflow-y-auto">
+                    <!-- Tasks will be populated here -->
+                </div>
+            </div>
+
+            <!-- Canvas Preview -->
+            <div class="lg:col-span-2">
+                <div class="bg-white p-4 rounded-xl shadow-sm">
+                    <div class="flex justify-between items-center mb-4 px-2">
+                        <h2 class="text-lg font-semibold text-slate-700">圖表預覽 (16:9)</h2>
+                    </div>
+                    <!-- The canvas internal resolution is 1920x1080 (16:9) -->
+                    <canvas id="ganttCanvas" width="1920" height="1080"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Preset colors for tasks
+        const colors = ['#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899'];
+        let colorIndex = 0;
+
+        let tasks = [];
+
+        // Set default date to today
+        document.getElementById('projectStartDate').valueAsDate = new Date();
+
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function addDays(dateStr, days) {
+            const date = new Date(dateStr);
+            date.setDate(date.getDate() + days);
+            return date;
+        }
+
+        function addTask() {
+            const nameInput = document.getElementById('taskName');
+            const daysInput = document.getElementById('taskDays');
+            const name = nameInput.value.trim() || `任務 ${tasks.length + 1}`;
+            const days = parseInt(daysInput.value) || 1;
+
+            let startDate;
+            if (tasks.length === 0) {
+                startDate = new Date(document.getElementById('projectStartDate').value);
+            } else {
+                // Next task starts the day after the previous task finishes
+                const prevTaskEnd = new Date(tasks[tasks.length - 1].endDate);
+                startDate = new Date(prevTaskEnd);
+                startDate.setDate(startDate.getDate() + 1);
+            }
+
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + days - 1); // If 1 day, end date is same as start date
+
+            const task = {
+                id: Date.now(),
+                name: name,
+                days: days,
+                startDate: startDate,
+                endDate: endDate,
+                color: colors[colorIndex % colors.length]
+            };
+
+            tasks.push(task);
+            colorIndex++;
+            
+            nameInput.value = '';
+            
+            updateTaskListUI();
+            drawChart();
+        }
+
+        function removeTask(id) {
+            tasks = tasks.filter(t => t.id !== id);
+            recalculateDates();
+        }
+
+        // Recalculate dates if start date changes or task is removed
+        function recalculateDates() {
+            const projectStartStr = document.getElementById('projectStartDate').value;
+            if (!projectStartStr) return;
+
+            let currentStart = new Date(projectStartStr);
+            
+            for (let i = 0; i < tasks.length; i++) {
+                tasks[i].startDate = new Date(currentStart);
+                
+                const currentEnd = new Date(currentStart);
+                currentEnd.setDate(currentEnd.getDate() + tasks[i].days - 1);
+                tasks[i].endDate = currentEnd;
+
+                // Next task starts the day after current task ends
+                currentStart = new Date(currentEnd);
+                currentStart.setDate(currentStart.getDate() + 1);
+            }
+
+            updateTaskListUI();
+            drawChart();
+        }
+
+        function updateTaskListUI() {
+            const list = document.getElementById('taskList');
+            list.innerHTML = '';
+            
+            tasks.forEach(task => {
+                const startStr = formatDate(task.startDate);
+                const endStr = formatDate(task.endDate);
+                
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between p-3 border border-slate-200 rounded-lg bg-slate-50';
+                item.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full" style="background-color: ${task.color}"></div>
+                        <div>
+                            <div class="font-medium text-sm text-slate-800">${task.name} <span class="text-slate-500 font-normal">(${task.days}天)</span></div>
+                            <div class="text-xs text-slate-500">${startStr} ~ ${endStr}</div>
+                        </div>
+                    </div>
+                    <button onclick="removeTask(${task.id})" class="text-red-500 hover:text-red-700 p-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function drawChart() {
+            const canvas = document.getElementById('ganttCanvas');
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width; // 1920
+            const height = canvas.height; // 1080
+            const projectName = document.getElementById('projectName').value || '未命名專案';
+
+            // 1. Clear background (White)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+
+            // 2. Draw Title & Border
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 60px "Noto Sans TC", sans-serif';
+            ctx.fillText(projectName, 80, 100);
+            
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(40, 40, width - 80, height - 80);
+
+            if (tasks.length === 0) {
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = 'italic 48px "Noto Sans TC", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('請新增任務以預覽甘特圖', width / 2, height / 2);
+                ctx.textAlign = 'left';
+                return;
+            }
+
+            // 3. Layout calculation
+            const paddingLeft = 400; // Space for task names
+            const paddingRight = 100;
+            const paddingTop = 220; // Space for timeline header
+            const paddingBottom = 100;
+            
+            const chartWidth = width - paddingLeft - paddingRight;
+            const chartHeight = height - paddingTop - paddingBottom;
+
+            // Date calculations
+            const firstDate = new Date(tasks[0].startDate);
+            const lastDate = new Date(tasks[tasks.length - 1].endDate);
+            // Total span in days
+            const totalDaysSpan = Math.max(1, Math.ceil((lastDate - firstDate) / (1000 * 60 * 60 * 24)) + 1);
+
+            const dayWidth = chartWidth / totalDaysSpan;
+            const rowHeight = chartHeight / Math.max(tasks.length, 1);
+
+            // 4. Draw Timeline (Grid & Header)
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(paddingLeft, paddingTop - 70, chartWidth, 70);
+            
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#cbd5e1';
+            
+            ctx.beginPath();
+            // Draw horizontal header line
+            ctx.moveTo(paddingLeft, paddingTop);
+            ctx.lineTo(width - paddingRight, paddingTop);
+            ctx.stroke();
+
+            ctx.font = '32px "Noto Sans TC", sans-serif';
+            ctx.fillStyle = '#64748b';
+            ctx.textAlign = 'center';
+
+            // Draw vertical grid lines and dates
+            const step = Math.ceil(totalDaysSpan / 15); // Prevent overcrowding dates
+            for (let i = 0; i <= totalDaysSpan; i++) {
+                const x = paddingLeft + i * dayWidth;
+                
+                // Draw grid line
+                ctx.beginPath();
+                ctx.moveTo(x, paddingTop - 70);
+                ctx.lineTo(x, height - paddingBottom);
+                ctx.stroke();
+
+                // Draw Date Text
+                if (i % step === 0 && i < totalDaysSpan) {
+                    let d = new Date(firstDate);
+                    d.setDate(d.getDate() + i);
+                    const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                    ctx.fillText(dateStr, x + dayWidth / 2, paddingTop - 25);
+                }
+            }
+            ctx.textAlign = 'left';
+
+            // 5. Draw Tasks (Names & Bars)
+            tasks.forEach((task, index) => {
+                const y = paddingTop + index * rowHeight;
+                
+                // Horizontal grid line for rows
+                ctx.beginPath();
+                ctx.moveTo(80, y + rowHeight);
+                ctx.lineTo(width - paddingRight, y + rowHeight);
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.stroke();
+
+                // Task Name
+                ctx.fillStyle = '#334155';
+                ctx.font = 'bold 40px "Noto Sans TC", sans-serif';
+                // Truncate name if too long
+                let displayName = task.name;
+                if (displayName.length > 12) displayName = displayName.substring(0, 11) + '...';
+                ctx.fillText(displayName, 80, y + rowHeight / 2 + 10);
+
+                // Task Bar
+                const offsetDays = Math.floor((task.startDate - firstDate) / (1000 * 60 * 60 * 24));
+                const barX = paddingLeft + offsetDays * dayWidth;
+                const barWidth = task.days * dayWidth;
+                const barHeight = Math.min(rowHeight * 0.6, 60); // Cap max height
+                const barY = y + (rowHeight - barHeight) / 2;
+
+                // Draw Bar Background
+                ctx.fillStyle = task.color;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, Math.max(barWidth, 5), barHeight, 8); // min width 5px
+                ctx.fill();
+
+                // Task details text inside/next to bar
+                ctx.fillStyle = barWidth > 120 ? '#ffffff' : '#475569';
+                ctx.font = 'bold 30px "Noto Sans TC", sans-serif';
+                const text = `${task.days}天`;
+                const textX = barWidth > 120 ? barX + 15 : barX + barWidth + 10;
+                ctx.fillText(text, textX, barY + barHeight / 2 + 7);
+            });
+
+            // 6. 於下方中間繪製累加總天數
+            const totalSum = tasks.reduce((sum, task) => sum + task.days, 0);
+            ctx.fillStyle = '#1e293b';
+            ctx.font = 'bold 48px "Noto Sans TC", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`累加總天數：${totalSum} 天`, width / 2, height - 40);
+            ctx.textAlign = 'left'; // 恢復預設靠左對齊
+        }
+
+        function downloadPNG() {
+            const canvas = document.getElementById('ganttCanvas');
+            const link = document.createElement('a');
+            link.download = `${document.getElementById('projectName').value || '甘特圖'}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Initialize with default tasks for demonstration
+        window.onload = () => {
+            document.getElementById('taskName').value = '規劃與設計';
+            document.getElementById('taskDays').value = 3;
+            addTask();
+            
+            document.getElementById('taskName').value = '基礎工程施工';
+            document.getElementById('taskDays').value = 7;
+            addTask();
+            
+            document.getElementById('taskName').value = '結構安裝';
+            document.getElementById('taskDays').value = 5;
+            addTask();
+        };
+    </script>
 </body>
 </html>
